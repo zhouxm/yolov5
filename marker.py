@@ -15,19 +15,20 @@ https://blog.csdn.net/lswdecsdn/article/details/106676840
 """
 
 import os
+from pathlib import Path
 
 import cv2
 
 
-def get_bigger_rectangle(fn):
+def get_bigger_rectangle(fp: Path):
     """
-    @param fn: file name
-    '-' 分割, 第三部分 558&578_173&523_159&434_586&474 对应车牌四个顶点坐标(右下角开始顺时针排列) 
+    '-' 分割, 第三部分 558&578_173&523_159&434_586&474 对应车牌四个顶点坐标(右下角开始顺时针排列)
     右下(558, 578); 左下(173, 523); 左上(159, 434); 右上(586, 474)
     top; bottom; left; right
-    return: 车牌子最靠外的顶点坐标
+    :param fp: file path
+    :return: 车牌子最靠外的顶点坐标 (min(x), min(y), max(x), max(y))
     """
-    border = fn.split("-")[3].split("_")
+    border = fp.stem.split("-")[3].split("_")
     rb_x = int(border[0].split("&")[0])
     rb_y = int(border[0].split("&")[1])
 
@@ -49,7 +50,7 @@ def get_bigger_rectangle(fn):
     )
 
 
-def get_plate_no(fn):
+def get_plate_no(fp: Path):
     """获取车牌号码
     CCPD 中的每个图像只有一个 LP。每个LP编号由一个汉字、一个字母和五个字母或数字组成。有效的中国车牌由七个字符组成：省（1个字符），字母（1个字符），字母+数字（5个字符）。
     "0_0_22_27_27_33_16"是每个字符的索引。这三个数组定义如下。每个数组的最后一个字符是字母 O，而不是数字 0。我们使用O作为"无字符"的标志，因为中文车牌字符中没有O。
@@ -58,7 +59,8 @@ def get_plate_no(fn):
     alphabets = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'O']
     ads       = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
                 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'O']
-
+    :param fp: file name
+    :return: 车牌号码
     """
     province = {
         0: "皖",
@@ -131,118 +133,149 @@ def get_plate_no(fn):
         32: "8",
         33: "9",
     }
-    b = fn.split("-")[4].split("_")
+    b = fp.stem.split("-")[4].split("_")
     plate_no = province[int(b[0])]
     for i in range(1, len(b)):
         plate_no = plate_no + plate_num[int(b[i])]
     return plate_no
 
 
-def rectangle(dir):
+def mark_rectangle_number(fp: Path):
+    """
+
+    :param fp: file path
+    :return:
+    """
     # 面积比-斜度-左上右下坐标-四个角坐标（右下角开始顺时针）-车牌-亮度-模糊度
 
-    files = os.listdir(dir)
-    for fn in files:
-        img = cv2.imread(os.path.join(dir, fn))
+    img = cv2.imread(str(fp))
+    _rect = get_bigger_rectangle(fp)
+    plate_no = get_plate_no(fp)
+    print(fp.stem, plate_no, _rect)
+    # cv2.rectangle(img, pt1, pt2, color, thickness=..., lineType=..., shift=.）
+    cv2.rectangle(img, (_rect[0], _rect[1]), (_rect[2], _rect[3]), (0, 0, 255), 1, )
 
-        cv2.rectangle(
-            img,
-            (get_bigger_rectangle(fn)[0], get_bigger_rectangle(fn)[1]),
-            (get_bigger_rectangle(fn)[2], get_bigger_rectangle(fn)[3]),
-            (0, 0, 255),
-            1,
-        )
+    add_text = img.copy()
+    cv2.putText(add_text, plate_no, (_rect[0], _rect[1]), cv2.FONT_HERSHEY_COMPLEX, 1.0, (0, 0, 255), 2, )
 
-        add_text = img.copy()
-        cv2.putText(
-            add_text,
-            get_plate_no(fn),
-            (get_bigger_rectangle(fn)[0], get_bigger_rectangle(fn)[1]),
-            cv2.FONT_HERSHEY_COMPLEX,
-            1.0,
-            (0, 0, 255),
-            2,
-        )
-
-        cv2.namedWindow("hello, World")
-        cv2.imshow("Hello, World", add_text)
-        cv2.waitKey()
-        cv2.destroyAllWindows()
+    cv2.namedWindow(plate_no)
+    cv2.imshow(plate_no, add_text)
+    cv2.waitKey()
+    cv2.destroyAllWindows()
 
 
-def main(dir):
-    files = os.listdir(dir)
-    for n in files:
+def mark2yolo(fp: Path):
+    """
 
-        img = cv2.imread("../ccpd_base/" + n)
-        sp = img.shape
-        height = sp[0]
-        width = sp[1]
+    :param fp: directory
+    :return:
+    """
+    img = cv2.imread(str(fp))
+    sp = img.shape
+    height = sp[0]
+    width = sp[1]
+    _rect = get_bigger_rectangle(fp)
+    lu_1 = _rect[0]
+    lu_2 = _rect[1]
+    rb_1 = _rect[2]
+    rb_2 = _rect[3]
 
-        lu_1 = get_bigger_rectangle(n)[0]
-        lu_2 = get_bigger_rectangle(n)[1]
-        rb_1 = get_bigger_rectangle(n)[2]
-        rb_2 = get_bigger_rectangle(n)[3]
+    # 0 中心点（归一化宽） 中心点（归一化长） 框宽度（归一化） 框长度（归一化）
+    mid_x = (rb_1 + lu_1) / 2 / width
+    mid_y = (rb_2 + lu_2) / 2 / height
+    dis_x = (rb_1 - lu_1) / width
+    dic_y = (rb_2 - lu_2) / height
 
-        # 0 中心点（归一化宽） 中心点（归一化长） 框宽度（归一化） 框长度（归一化）
-        mid_x = (rb_1 + lu_1) / 2 / width
-        mid_y = (rb_2 + lu_2) / 2 / height
-        dis_x = (rb_1 - lu_1) / width
-        dic_y = (rb_2 - lu_2) / height
+    res = "0 " + str(mid_x) + " " + str(mid_y) + " " + str(dis_x) + " " + str(dic_y)
+    print(res)
 
-        res = "0 " + str(mid_x) + " " + str(mid_y) + " " + str(dis_x) + " " + str(dic_y)
-        print(res)
-
-        if not os.path.exists("E:\CCPD\CCPD2019\ccpd_base"):
-            os.makedirs("E:\CCPD\CCPD2019\ccpd_base")
-        f = open("E:\CCPD\CCPD2019\ccpd_base" + n.split(".")[0] + ".txt", "a")
-        f.write(res)
-        f.close()
+    # if not os.path.exists("labels"):
+    #     os.makedirs("labels")
+    # with open(f"labels/{fp.stem} .txt", "a") as f:
+    #     f.write(res)
+    #     f.close()
 
 
-def mark(dir):
+def mark(fp: Path):
     # 参考
     # https://blog.csdn.net/qq_36516958/article/details/114274778
     # https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data#2-create-labels
+    # _rect = get_bigger_rectangle(fp)
+    list1 = fp.stem.split("-", 3)  # 第一次分割，以减号'-'做分割
+    subname = list1[2]
+    lt, rb = subname.split("_", 1)  # 第二次分割，以下划线'_'做分割
+    lx, ly = lt.split("&", 1)
+    rx, ry = rb.split("&", 1)
 
-    for filename in os.listdir(dir):
-        list1 = filename.split("-", 3)  # 第一次分割，以减号'-'做分割
-        subname = list1[2]
-        lt, rb = subname.split("_", 1)  # 第二次分割，以下划线'_'做分割
-        lx, ly = lt.split("&", 1)
-        rx, ry = rb.split("&", 1)
-        meta = []
+    width = int(rx) - int(lx)
+    height = int(ry) - int(ly)  # bounding box的宽和高
+    center_x = float(lx) + width / 2
+    center_y = float(ly) + height / 2  # bounding box中心点
 
-        width = int(rx) - int(lx)
-        height = int(ry) - int(ly)  # bounding box的宽和高
-        center_x = float(lx) + width / 2
-        center_y = float(ly) + height / 2  # bounding box中心点
+    img = cv2.imread(str(fp))
+    width = width / img.shape[1]
+    height = height / img.shape[0]
+    center_x = center_x / img.shape[1]
+    center_y = center_y / img.shape[0]
+    # 绿牌是第0类，蓝牌是第1类
+    meta = [str(1), str(center_x), str(center_y), str(width), str(height)]
+    # cv2.rectangle(img, pt1, pt2, color, thickness=..., lineType=..., shift=.）
+    # cv2.rectangle(img, (5, 8), (20, 40), (0, 0, 255), 1, )
+    # plate_no = get_plate_no(fp)
+    # cv2.namedWindow(plate_no)
+    # cv2.imshow(plate_no, img)
+    # cv2.waitKey()
+    # cv2.destroyAllWindows()
 
-        img = cv2.imread(os.path.join(dir, filename))
-        width = width / img.shape[1]
-        height = height / img.shape[0]
-        center_x = center_x / img.shape[1]
-        center_y = center_y / img.shape[0]
-        # 绿牌是第0类，蓝牌是第1类
-        meta.append(str(1))
-        meta.append(str(center_x))
-        meta.append(str(center_y))
-        meta.append(str(width))
-        meta.append(str(height))
+    # txtfile = f"{fp.parent}/{fp.stem}.txt"
+    # 绿牌是第0类，蓝牌是第1类
+    # with open(txtfile, "w") as f:
+    #     f.write(str(1) + " " + str(center_x) + " " + str(center_y) + " " + str(width) + " " + str(height) + "\n")
+    #     f.write(" ".join(meta))
 
-        txtname = filename.split(".", 1)
-        txtfile = f"{dir}/{txtname[0]}.txt"
-        # 绿牌是第0类，蓝牌是第1类
-        with open(txtfile, "w") as f:
-            f.write(str(1) + " " + str(center_x) + " " + str(center_y) + " " + str(width) + " " + str(height) + "\n")
-            f.write(" ".join(meta))
+    print(f"mark \tfilename\t:{fp.stem} \timg.shape\t:{img.shape} meta:{meta}")
 
-        print(
-            f"\tfilename\t:{filename} \n\ttxtfile\t:{txtfile} \n\timg.shape\t:{img.shape} \n\tcenter_x\t:{center_x} \n\tcenter_y\t:{center_y} \n\twidth\t:{width} \n\theight\t:{height}")
+
+def mark1(fp: Path):
+    """
+
+    :param fp: file Path
+    :return:
+    """
+    # fp = Path(filepath)
+    _rect = get_bigger_rectangle(fp)
+
+    # bounding box的宽和高
+    width = _rect[2] - _rect[0]
+    height = _rect[3] - _rect[1]
+    # bounding box中心点
+    center_x = _rect[2] / 2
+    center_y = _rect[3] / 2
+
+    img = cv2.imread(str(fp))
+    width = width / img.shape[1]
+    height = height / img.shape[0]
+    center_x = center_x / img.shape[1]
+    center_y = center_y / img.shape[0]
+    # 绿牌是第0类，蓝牌是第1类
+    meta = [str(1), str(center_x), str(center_y), str(width), str(height)]
+
+    txt_file = f"{fp.parent}/{fp.stem}.txt"
+    # 绿牌是第0类，蓝牌是第1类
+    # with open(txt_file, "w") as f:
+    #     f.write(str(1) + " " + str(center_x) + " " + str(center_y) + " " + str(width) + " " + str(height) + "\n")
+    #     f.write(" ".join(meta))
+
+    print(f"mark1 \tfilename\t:{fp.stem} \timg.shape\t:{img.shape} meta:{meta}")
 
 
 if __name__ == "__main__":
-    dir = "../dataset/CCPD2020/ccpd_green/demo"
-    # main(dir)
-    # rectangle(dir)
-    mark(dir)
+    source = "../dataset/CCPD/demo"
+    _files = os.listdir(source)
+    for fn in _files:
+        f = Path(os.path.join(source,fn))
+        # mark(f)
+        mark1(f)
+        mark2yolo(f)
+        # mark_rectangle_number(f)
+        print(f.stem)
