@@ -156,3 +156,7 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+```shell
+docker run -it --gpus all -v /data/workspace/ai/ocr/:/workspace --name torch0.11.2 -p 6006:6006 torchvision:0.11.2_cu113
+```
